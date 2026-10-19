@@ -1,199 +1,313 @@
 # a31-assistance
 
-`a31-assistance` is the A3i-Accel website assistant. It uses a Modular Agentic
-RAG Architecture: deterministic handlers for simple requests and one controlled
-LLM → tool → result → LLM workflow for factual A3i questions.
+![Python](https://img.shields.io/badge/Python-3.10%2B-3776AB?logo=python&logoColor=white)
+![FastAPI](https://img.shields.io/badge/FastAPI-0.115%2B-009688?logo=fastapi&logoColor=white)
+![Next.js](https://img.shields.io/badge/Frontend-Next.js_16-black?logo=next.js)
+![Tests](https://img.shields.io/badge/backend_tests-64_passing-brightgreen)
 
-The backend uses FastAPI, Groq, Ollama, approved local JSON knowledge, optional
-official-domain Tavily retrieval, in-memory conversation context and SQLite demo
-requests. The separate Next.js frontend provides the chat widget and demo form.
+`a31-assistance` is a focused website assistant for
+[A3i-Accel](https://a3i-accel.com/). It answers A3i questions from approved
+content, searches only the official domain when cloud access is enabled, keeps
+follow-up context, streams responses, and captures confirmed demo requests.
 
-See [Architecture](docs/ARCHITECTURE.md),
-[Implementation audit](docs/IMPLEMENTATION_AUDIT.md) and
-[Performance report](docs/PERFORMANCE_REPORT.md) for the verified design and results.
+The project uses a **Modular Agentic RAG** design. Deterministic Python handlers
+process greetings, demo requests and unsupported questions. Factual questions
+follow one controlled workflow:
 
-## Setup
-
-```powershell
-Copy-Item .env.example .env
-.\.venv\Scripts\python.exe -m pip install -r requirements.txt
+```text
+LLM → approved search tool → evidence checks → LLM answer
 ```
 
-Add provider keys only to `.env`; never commit that file. The main settings are:
+## Features
 
-```dotenv
-PRIVACY_MODE=cloud_allowed
-OLLAMA_URL=http://127.0.0.1:11434
-OLLAMA_MODEL=qwen3:4b-instruct-2507-q4_K_M
-GROQ_MODEL=openai/gpt-oss-20b
-GROQ_API_KEY=
-TAVILY_API_KEY=
-FRONTEND_ORIGINS=http://localhost:3000
+- A3i-only scope with deterministic intent routing.
+- Groq as the optional cloud model with Ollama fallback.
+- Approved local JSON knowledge before external search.
+- Tavily restricted to `a3i-accel.com`.
+- Evidence relevance, freshness, version and numeric-claim checks.
+- Concise answers with verified source links.
+- Context-aware follow-ups and ambiguity clarification.
+- NDJSON response streaming with safe retry events.
+- Validated and idempotent SQLite demo requests.
+- Local-only privacy mode that blocks Groq and Tavily.
+- Rate limits, request deadlines, strict CORS and content-free telemetry.
+- 64 backend regression tests and a 55-case evaluation dataset.
+
+## Architecture
+
+```mermaid
+flowchart LR
+    UI[Next.js chat widget] --> API[FastAPI]
+    API --> Router{Intent router}
+    Router -->|Conversation| Direct[Deterministic response]
+    Router -->|Demo| Demo[Demo guidance / form]
+    Router -->|Unsupported| Scope[A3i scope response]
+    Router -->|Knowledge| LLM[Groq or Ollama]
+    LLM --> Tool[Controlled search tool]
+    Tool --> Local[Approved local JSON]
+    Tool -->|cloud_allowed| Tavily[Tavily: official domain only]
+    Local --> Evidence[Evidence validation]
+    Tavily --> Evidence
+    Evidence --> Answer[Grounded answer]
+    Answer --> Stream[NDJSON stream]
+    Direct --> Stream
+    Scope --> Stream
+    Demo --> Stream
 ```
 
-`cloud_allowed` permits Groq and approved-domain Tavily calls. `local_only`
-selects Ollama and approved local knowledge and blocks both external providers
-before a network request.
+See the detailed [architecture](docs/ARCHITECTURE.md),
+[implementation audit](docs/IMPLEMENTATION_AUDIT.md), and
+[performance report](docs/PERFORMANCE_REPORT.md).
 
-Start the API:
-
-```powershell
-.\.venv\Scripts\python.exe -m uvicorn app.main:app --reload --host 127.0.0.1 --port 8000
-```
-
-Start the frontend in a second terminal:
-
-```powershell
-Set-Location 'C:\Users\Asus\OneDrive\Desktop\A3i Frontend'
-npm.cmd run dev
-```
-
-The frontend server reads `A3I_API_URL` and proxies `/api/chat` and `/api/leads`.
-Provider keys never enter browser code.
-
-## API behavior
-
-`POST /chat` returns a complete response. `POST /chat/stream` returns NDJSON:
-
-- `session` — conversation ID.
-- `status` — current non-answer state and request ID.
-- `delta` — approved answer text.
-- `done` — successful completion.
-- `error` — safe retry message; partial output is not saved to memory.
-
-Every endpoint returns `X-Request-ID`. Structured logs contain allowlisted timing
-and outcome fields only; they do not contain messages, contact details, API keys
-or retrieved page text.
-
-The Python router has exactly four primary intents:
-
-- `conversation` — greeting, thanks and clarification.
-- `knowledge` — A3i facts, products, services, policies and pricing.
-- `demo` — direct users to the validated demo form.
-- `unsupported` — redirect unrelated or prohibited requests.
-
-Pricing always follows the knowledge path and requires evidence.
-
-## Code map
-
-The runtime is split by responsibility so each file has one clear purpose:
-
-| File | Responsibility |
-|---|---|
-| `app/main.py` | HTTP validation, sessions, rate limits, timeouts and NDJSON responses. |
-| `app/router.py` | Deterministic selection of the four supported intents. |
-| `app/conversation.py` | Follow-up resolution and clarification for products and website topics. |
-| `app/agent.py` | The bounded LLM → tool → result → LLM workflow and final answer checks. |
-| `app/tools.py` | Approved local retrieval, official-domain Tavily fallback and search caching. |
-| `app/evidence.py` | Relevance, freshness, conflict and numeric-claim checks. |
-| `app/knowledge.py` | Approved-only local JSON search. |
-| `app/memory.py` | Bounded per-session conversation history. |
-| `app/leads.py` | Validated, idempotent SQLite demo requests. |
-| `app/telemetry.py` | Content-free request and provider measurements. |
-
-The public API calls only `chat`, `stream_chat` and `save_demo`. Private helpers
-start with an underscore and describe one step of the workflow.
+## Project structure
 
 ```text
 Chatbot/
-├── app/          Runtime API, agent, retrieval and storage code
-├── scripts/      Terminal chat, ingestion, review and evaluation commands
-├── tests/        Backend regression tests
-├── docs/         Architecture, audit and performance documents
-├── knowledge/    Active reviewed collection and archived legacy content
-├── data/         Runtime database, logs and evaluation output
-├── artifacts/    Generated screenshots and research review files
-├── .env.example  Safe configuration template
-└── README.md      Setup and operating instructions
+├── app/                         # Runtime backend package
+│   ├── main.py                  # FastAPI endpoints and request lifecycle
+│   ├── agent.py                 # LLM and tool orchestration
+│   ├── router.py                # Four-intent deterministic router
+│   ├── conversation.py          # Follow-up and clarification handling
+│   ├── tools.py                 # Local and official-domain retrieval
+│   ├── evidence.py              # Evidence quality checks
+│   ├── knowledge.py             # Approved local knowledge search
+│   ├── memory.py                # Bounded conversation memory
+│   ├── leads.py                 # SQLite demo-request storage
+│   ├── privacy.py               # Cloud/local privacy policy
+│   ├── security.py              # CORS and rate limiting
+│   ├── telemetry.py             # Content-free request metrics
+│   └── config.py                # Shared project paths and environment loading
+├── scripts/                     # CLI and maintenance commands
+├── tests/                       # Backend regression tests
+├── docs/                        # Architecture, audit and performance documents
+├── knowledge/                   # Reviewed collection and legacy archive
+├── data/                        # Runtime database, logs and evaluations
+├── artifacts/                   # Generated review and research files
+├── .env.example                 # Safe configuration template
+├── requirements.txt
+└── README.md
 ```
 
-Run the terminal client from the project root with:
+## Requirements
+
+- Python 3.10 or newer.
+- [Ollama](https://ollama.com/) with the model configured in `OLLAMA_MODEL`.
+- Optional Groq API key for cloud inference.
+- Optional Tavily API key for official-site search.
+- Node.js 20 or newer for the separate Next.js frontend.
+
+## Backend setup
+
+From the backend project root, create a virtual environment and install the
+dependencies.
+
+### Windows PowerShell
 
 ```powershell
-.\.venv\Scripts\python.exe -m scripts.chat_cli
+python -m venv .venv
+.\.venv\Scripts\Activate.ps1
+python -m pip install --upgrade pip
+python -m pip install -r requirements.txt
+Copy-Item .env.example .env
 ```
 
-## Approved knowledge
+### macOS or Linux
 
-Refresh the draft collection from the official sitemap:
+```bash
+python3 -m venv .venv
+source .venv/bin/activate
+python -m pip install --upgrade pip
+python -m pip install -r requirements.txt
+cp .env.example .env
+```
+
+Add real provider keys only to `.env`. The file is ignored by Git. Keep
+`.env.example` as the shareable configuration template.
+
+Start Ollama and ensure the model named by `OLLAMA_MODEL` is installed. Then run
+the API:
 
 ```powershell
-.\.venv\Scripts\python.exe -m scripts.ingest_knowledge
+python -m uvicorn app.main:app --reload --host 127.0.0.1 --port 8000
 ```
 
-New or changed records remain `pending_review`. Review them individually:
+The API is available at `http://127.0.0.1:8000`. FastAPI documentation is at
+`http://127.0.0.1:8000/docs`.
 
-```powershell
-.\.venv\Scripts\python.exe -m scripts.knowledge_admin list --status pending_review
-.\.venv\Scripts\python.exe -m scripts.knowledge_admin show DOCUMENT_ID
-.\.venv\Scripts\python.exe -m scripts.knowledge_admin approve DOCUMENT_ID
-```
+## Configuration
 
-Only approved records can support answers. Re-running ingestion retains approval
-only when the content hash is unchanged. The current generated collection has 61
-pending records and zero approved records.
+| Variable | Default | Purpose |
+|---|---|---|
+| `PRIVACY_MODE` | `cloud_allowed` | Use `local_only` to block Groq and Tavily. |
+| `OLLAMA_URL` | `http://127.0.0.1:11434` | Local Ollama server. |
+| `OLLAMA_MODEL` | `qwen3:4b-instruct-2507-q4_K_M` | Local fallback model. |
+| `GROQ_MODEL` | `openai/gpt-oss-20b` | Cloud model when Groq is configured. |
+| `GROQ_API_KEY` | Empty | Enables Groq in `cloud_allowed` mode. |
+| `TAVILY_API_KEY` | Empty | Enables official-site Tavily search. |
+| `FRONTEND_ORIGINS` | Localhost origins | Comma-separated CORS allowlist. |
+| `EVIDENCE_REVIEW_ENABLED` | `false` | Enables the optional second LLM evidence review. |
+| `KNOWLEDGE_MAX_AGE_DAYS` | `180` | Maximum age of reviewed local content. |
+| `CHAT_REQUEST_TIMEOUT_SECONDS` | `180` | Total chat deadline. |
+| `LEAD_REQUEST_TIMEOUT_SECONDS` | `10` | Demo-request storage deadline. |
+| `CHAT_RATE_LIMIT` | `30` | Chat requests allowed per rate window. |
+| `LEAD_RATE_LIMIT` | `5` | Demo requests allowed per rate window. |
 
-Keyword retrieval is the intentional baseline. ChromaDB, Qdrant, pgvector,
-LangGraph and extra autonomous agents are not required by the measured system.
+The remaining rate-window variables are documented in [.env.example](.env.example).
 
-## Demo requests
+## Frontend integration
 
-`POST /leads` accepts the assignment fields `name`, `company`, `need`,
-`confirmed: true` and a UUID `request_id`. Reusing the ID with identical data is
-idempotent; changing details with the same ID returns a conflict. The form does
-not collect email and does not claim that a meeting is booked.
-
-Lead retention remains manual until a final retention policy is selected.
-
-## Protection and limits
-
-Input schemas reject extra fields and oversized values. CORS accepts explicit
-HTTP(S) origins only. In-memory limits and deadlines are configured with:
+The frontend is maintained as a separate Next.js project. Configure its server
+environment to point to this backend:
 
 ```dotenv
-CHAT_RATE_LIMIT=30
-CHAT_RATE_WINDOW_SECONDS=60
-LEAD_RATE_LIMIT=5
-LEAD_RATE_WINDOW_SECONDS=3600
-CHAT_REQUEST_TIMEOUT_SECONDS=180
-LEAD_REQUEST_TIMEOUT_SECONDS=10
-KNOWLEDGE_MAX_AGE_DAYS=180
-EVIDENCE_REVIEW_ENABLED=false
+A3I_API_URL=http://127.0.0.1:8000
 ```
 
-The optional second LLM evidence reviewer stays disabled because the measured
-fallback latency is already high. Turnstile remains deferred until there is a
-public deployment and a real site key.
+Then install and run the frontend:
+
+```powershell
+npm install
+npm run dev
+```
+
+The Next.js server proxies chat and lead requests, so model and search keys stay
+on the backend.
+
+## API
+
+### Complete chat response
+
+`POST /chat`
+
+```json
+{
+  "message": "What does A3i do?",
+  "session_id": null,
+  "page_path": "/"
+}
+```
+
+Response:
+
+```json
+{
+  "answer": "A concise evidence-based answer.",
+  "session_id": "00000000-0000-0000-0000-000000000000"
+}
+```
+
+### Streaming chat response
+
+`POST /chat/stream` returns newline-delimited JSON events:
+
+```text
+{"type":"session","session_id":"..."}
+{"type":"status","status":"thinking","request_id":"..."}
+{"type":"delta","text":"A3i ..."}
+{"type":"done"}
+```
+
+Possible event types are `session`, `status`, `delta`, `done`, and `error`.
+Partial answers are not saved when a stream fails.
+
+### Demo request
+
+`POST /leads`
+
+```json
+{
+  "name": "Visitor Name",
+  "company": "Example Company",
+  "need": "I want to learn about meeting automation.",
+  "confirmed": true,
+  "request_id": "00000000-0000-0000-0000-000000000000"
+}
+```
+
+Submitting this form records a request. It does not claim that a meeting has
+been booked.
+
+## Terminal chat
+
+Run the chatbot without the frontend:
+
+```powershell
+python -m scripts.chat_cli
+```
+
+Use `--debug` to display provider and retrieval activity:
+
+```powershell
+python -m scripts.chat_cli --debug
+```
+
+## Knowledge workflow
+
+Fetch the official sitemap and create reviewable records:
+
+```powershell
+python -m scripts.ingest_knowledge
+```
+
+New and changed records receive `pending_review`. They cannot support answers
+until someone approves them.
+
+```powershell
+python -m scripts.knowledge_admin list --status pending_review
+python -m scripts.knowledge_admin show DOCUMENT_ID
+python -m scripts.knowledge_admin approve DOCUMENT_ID
+python -m scripts.knowledge_admin revoke DOCUMENT_ID
+```
+
+Re-ingestion preserves approval only when the content hash has not changed.
 
 ## Tests and evaluation
 
-```powershell
-.\.venv\Scripts\python.exe -m unittest discover -s tests -v
-Set-Location 'C:\Users\Asus\OneDrive\Desktop\A3i Frontend'
-npm.cmd run typecheck
-```
-
-Run the full live benchmark from the backend folder:
+Run the backend regression suite:
 
 ```powershell
-.\.venv\Scripts\python.exe -m scripts.evaluate
+python -m unittest discover -s tests -v
 ```
 
-The 55-case dataset covers company FAQs, products, technical questions, pricing,
-follow-ups, missing information, prompt injection, demo requests and deterministic
-conversation. It saves `data/evaluations/evaluation.json` with routing, latency, TTFT, cache,
-provider, citation and review fields.
+Run the frontend checks from the frontend project:
 
-Factual rows are never auto-marked correct. Review them against retrieved A3i
-evidence before reporting answer accuracy. The current verified deterministic
-suite has 64 passing backend tests, and the frontend TypeScript check passes.
+```powershell
+npm run typecheck
+npm run build
+```
+
+Run the 55-case live evaluation:
+
+```powershell
+python -m scripts.evaluate
+```
+
+Results are written to `data/evaluations/evaluation.json`. Factual responses are
+marked for human evidence review instead of being automatically declared correct.
+
+## Privacy and security
+
+- `local_only` prevents Groq selection and Tavily construction.
+- Search results must use HTTPS and an exact official A3i hostname.
+- Tool arguments reject unexpected fields.
+- Answer links must match URLs returned by retrieval.
+- Structured telemetry excludes messages, lead details, keys and page content.
+- CORS requires explicit HTTP or HTTPS origins.
+- Chat sessions, rate limits and caches have fixed in-memory bounds.
 
 ## Known limitations
 
-- The local collection cannot answer factual questions until records are reviewed.
-- Live Tavily coverage depends on indexed official pages and provider availability.
-- Citation validity does not by itself prove sentence-level support.
-- The 55-case run measured a 28.23-second p95 and one 145-second Ollama fallback.
-- Sessions, rate limits and search cache are process-local; use one API worker.
-- No automatic lead-retention deletion is enabled because the policy is undecided.
-- The backend and frontend folders currently have no Git repositories.
+- Local-only factual answers require reviewed records in `knowledge/collection.json`.
+- Live search coverage depends on Tavily and the official pages it has indexed.
+- Sessions, rate limits and search cache are process-local; deploy one API worker
+  unless these stores are moved to shared infrastructure.
+- Lead retention is manual until a final retention policy is selected.
+- Local Ollama fallback speed depends on the host machine and selected model.
+
+## Documentation
+
+- [Architecture](docs/ARCHITECTURE.md)
+- [Implementation audit](docs/IMPLEMENTATION_AUDIT.md)
+- [Improvement checklist](docs/IMPROVEMENT_CHECKLIST.md)
+- [Performance report](docs/PERFORMANCE_REPORT.md)
+- [Change summary](docs/CHANGE_SUMMARY.md)
