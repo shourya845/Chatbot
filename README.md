@@ -1,253 +1,338 @@
 # a31-assistance
 
-A3i-Accel website chatbot built with Python, FastAPI, Groq/Ollama and Tavily.
-It uses the workflow **LLM → Tool → Result → LLM** to answer from official A3i
-website content, with reviewed external company-background evidence as a secondary
-source. The separate Next.js frontend displays streaming answers and
-collects demo requests.
+An A3i-Accel website assistant built with **Python, FastAPI, Groq, Ollama, and Tavily**. It answers A3i questions using retrieved evidence, handles pricing enquiries, and directs visitors to a demo request form.
 
-## Features
+This repository contains the **Python backend and terminal chatbot**. The React/Next.js frontend runs separately.
 
-- Direct retrieval of public A3i page fragments, with Tavily fallback and a
-  15-minute bounded cache.
-- Groq inference when configured, with Ollama fallback.
-- Short answers, conversation context and ambiguity clarification.
-- Source links checked against retrieved URLs.
-- External discovery with a local pending-review queue; only approved snapshots
-  can supplement company background and announcements.
-- NDJSON streaming, session history and retry errors.
-- Confirmed demo requests stored in SQLite with duplicate-request protection.
+## What it does
 
-## Files
+- Retrieves official A3i website content before generating factual answers.
+- Routes requests into **learn**, **pricing**, or **demo**.
+- Uses the workflow **LLM → Tool → Result → LLM** for knowledge questions.
+- Streams answers and remembers recent messages within a session.
+- Labels partial product lists as examples and keeps features attached to their product and pricing tier.
+- Suggests contacting A3i when pricing cannot be verified.
+- Rejects unrelated requests and checks generated links against retrieved URLs.
+- Stores confirmed demo requests in SQLite with protection against duplicate submissions.
+
+The model is not fine-tuned on the question datasets. It retrieves evidence at runtime; prompts guide its answers but do not guarantee factual accuracy.
+
+## Architecture
+
+One primary LLM workflow handles knowledge questions. Small Python functions handle routing, greetings, clarification, demo guidance, and standard refusals. There are no separate autonomous agents for these tasks.
+
+```mermaid
+flowchart TD
+    UI[Separate Next.js frontend] --> Proxy[Frontend API proxy]
+    Proxy --> API[FastAPI backend]
+    CLI[Terminal chatbot] --> Router[Scope checks and intent router]
+    API --> Router
+    Router -->|Learn or pricing| Plan[LLM selects search tool]
+    Plan --> Tool[Controlled A3i search]
+    Tool --> Official[Official website fragments]
+    Official -->|No usable pages| Tavily[Tavily official-domain search]
+    Tool --> Evidence[Retrieved excerpts]
+    Evidence --> Answer[LLM synthesizes answer]
+    Answer --> Links[Check source URLs]
+    Links --> API
+    Links --> CLI
+    API -->|NDJSON stream| Proxy
+    Proxy --> UI
+    Router -->|Demo| Guidance[Book a Meeting guidance]
+    Guidance --> UI
+    UI -->|Confirmed form via proxy| Leads[POST /leads]
+    Leads --> DB[(SQLite)]
+```
+
+### Answer flow
+
+1. Check the request's scope, resolve follow-ups, and ask for clarification when needed.
+2. Return simple greetings, refusals, or demo guidance directly.
+3. For knowledge questions, ask the LLM to call `search_a3i_web`.
+4. Retrieve up to two relevant official pages from the fixed catalog in `website_sources.json`. Read their public HTML fragments and select relevant excerpts. If direct retrieval finds no usable pages, use Tavily when configured.
+5. Pass the evidence back to the LLM for its final answer. The shared final-answer instructions apply to both normal and streaming chat.
+6. Remove generated URLs that were not retrieved. This validates link destinations, not whether every claim is supported.
+
+**Models:** Groq is preferred when `GROQ_API_KEY` is configured; otherwise the backend uses Ollama. Groq failures can fall back to Ollama. After a Groq HTTP 429, the process observes a cooldown before trying Groq again. Ollama must be running and its model installed for that fallback to work.
+
+**Memory:** Recent history is bounded and held in memory. API sessions expire after one hour of inactivity and disappear when the process restarts. Search results have a bounded 15-minute cache.
+
+### Optional reviewed external evidence
+
+Official A3i sources come first. Company-background questions may also use manually approved snapshots from the fixed external-source allowlist. Product features, pricing, policies, and demo queries remain official-only.
+
+New external snapshots are `pending_review`. Pending or rejected text is never passed to the answer model. See [External source review](#external-source-review) below.
+
+## Project structure
 
 ```text
 Chatbot/
-├── main.py             FastAPI endpoints and server entry point
-├── agent.py            Model calls and controlled tool workflow
-├── router.py           Learn / pricing / demo classification
-├── conversation.py     Follow-up context and clarification
-├── tools.py            Official-site search and cache
-├── website.py          Read the official website's public HTML fragments
-├── website_sources.json Public page IDs and search keywords (no credentials)
-├── external_sources.py External discovery, snapshot review and approved retrieval
-├── memory.py           Bounded session history
-├── leads.py            Demo validation and SQLite storage
-├── chat_cli.py         Terminal chatbot
-├── evaluate.py         Resumable live-answer evaluation with saved evidence
-├── questions.json      User-provided question set
-├── build_benchmark.py  Build the 500-scenario evaluation set
-├── benchmark_500.json   100 supplied + 400 generated realistic scenarios
-├── BENCHMARK_REPORT.md  Pilot findings, limitations and follow-up commands
-├── tests/              Regression tests
-├── data/               Local database and generated output (Git ignored)
-├── .env.example        Configuration template
-└── requirements.txt
+├── main.py                    FastAPI endpoints and development server launcher
+├── agent.py                   Model selection, tool calls, prompts and streaming
+├── router.py                  Learn / pricing / demo intent routing
+├── conversation.py            Follow-up resolution and clarification
+├── tools.py                   Search tool, excerpt selection and cache
+├── website.py                 Official HTML-fragment reader
+├── website_sources.json       Fixed source catalog and retrieval keywords
+├── external_sources.py        External snapshot discovery and manual review
+├── memory.py                  Bounded conversation history
+├── leads.py                   Demo validation and SQLite storage
+├── chat_cli.py                Interactive terminal chatbot
+├── evaluate.py                Resumable live-answer evaluation
+├── questions.json             100 supplied evaluation questions
+├── benchmark_500.json         Supplied and generated evaluation scenarios
+├── build_benchmark.py         Benchmark dataset generator
+├── tests/                     Automated regression tests
+├── data/                      Local databases and results; ignored by Git
+├── DEPLOYMENT_SMOKE_REPORT.md Focused answer-check results and remaining issues
+├── BENCHMARK_REPORT.md         Earlier benchmark findings
+├── .env.example               Configuration template; no real keys
+└── requirements.txt           Python dependencies
 ```
 
 ## Setup
 
-From the project root in PowerShell:
+Use **Python 3.10 or later**. Run the following in PowerShell:
 
 ```powershell
+git clone https://github.com/shourya845/Chatbot.git
+cd Chatbot
 python -m venv .venv
 .\.venv\Scripts\Activate.ps1
 python -m pip install -r requirements.txt
 Copy-Item .env.example .env
 ```
 
-Only copy the template when setting up a new environment; keep an existing `.env`.
-Set `TAVILY_API_KEY` for fallback search and optionally `GROQ_API_KEY` for cloud inference.
-Install/start Ollama and the model configured by `OLLAMA_MODEL` for local inference.
-Keep real API keys in `.env`, which is excluded from Git.
+Copy `.env.example` only for a new setup. Do not overwrite an existing `.env` containing your configuration.
 
-## Run
+If PowerShell blocks activation, allow scripts for the current terminal session, then activate again:
 
-Website backend:
+```powershell
+Set-ExecutionPolicy -Scope Process -ExecutionPolicy RemoteSigned
+.\.venv\Scripts\Activate.ps1
+```
+
+### Environment variables
+
+Edit your local `.env`:
+
+```dotenv
+GROQ_API_KEY=
+GROQ_MODEL=openai/gpt-oss-20b
+OLLAMA_URL=http://127.0.0.1:11434
+OLLAMA_MODEL=qwen3:4b-instruct-2507-q4_K_M
+TAVILY_API_KEY=
+```
+
+| Variable | Purpose |
+| --- | --- |
+| `GROQ_API_KEY` | Enables the preferred cloud model. Leave empty to use Ollama. |
+| `GROQ_MODEL` | Model name sent to Groq. |
+| `OLLAMA_URL` | Address of the Ollama server. |
+| `OLLAMA_MODEL` | Exact installed Ollama model tag. |
+| `TAVILY_API_KEY` | Enables official-site fallback search and optional external discovery. Direct official-page retrieval works without it. |
+
+Install Ollama separately if using local inference or fallback. Pull the model matching your configuration:
+
+```powershell
+ollama pull qwen3:4b-instruct-2507-q4_K_M
+```
+
+Keep Ollama running. If its desktop service is not running, start it with `ollama serve` in another terminal. For a different installed model, update `OLLAMA_MODEL` accordingly.
+
+Never commit `.env`, real credentials, or lead databases. Cloud and search services may have usage limits or charges; local inference requires sufficient hardware.
+
+## Run the chatbot
+
+### Backend for the website
+
+From the **Chatbot repository root**:
 
 ```powershell
 python main.py
 ```
 
-Alternative server command:
+The development API runs at `http://127.0.0.1:8000`. Open [interactive API documentation](http://127.0.0.1:8000/docs) to inspect and try the endpoints. There is no homepage handler at `/`.
+
+Equivalent development command:
 
 ```powershell
 python -m uvicorn main:app --reload --host 127.0.0.1 --port 8000
 ```
 
-API documentation: `http://127.0.0.1:8000/docs`.
+Leave this terminal open while using the frontend. Stop it with `Ctrl+C`.
 
-Terminal chatbot:
+### Terminal chat
 
 ```powershell
 python chat_cli.py
+```
+
+For model/tool activity logs:
+
+```powershell
 python chat_cli.py --debug
 ```
 
-The frontend runs separately. Its server environment should use
-`A3I_API_URL=http://127.0.0.1:8000`. Run `npm run dev` in that frontend folder.
+Try `What are Apps, Ants and Agents?` or `What is NeXtory pricing?`. Type `bye` to exit.
 
-## API
+The CLI calls the agent directly; it does **not** require the FastAPI server. Both need a working model provider and access to their evidence sources.
 
-- `POST /chat`: `{message, session_id?, page_path?}` → `{answer, session_id, intent}`.
-- `POST /chat/stream`: same input; emits `session`, `delta`, `done` or `error` events.
-  The `session` event includes `intent` (`learn`, `pricing` or `demo`).
-- `POST /leads`: `{name, company, need, confirmed: true, request_id}`.
+## Connect the frontend
 
-Sessions are held in memory and expire after one hour. Restarting the server clears
-them. Demo submissions record a request rather than confirming a calendar booking.
+In the separate Next.js frontend's server environment, set:
 
-The router handles learning through retrieval, pricing through retrieved evidence
-and contact guidance, and demo requests through the existing Book a Meeting form.
-Explicit demo booking requests take precedence over pricing keywords; questions
-about the cost of a demo remain pricing requests. Off-topic and prohibited
-requests still pass through the existing scope checks. The intent is API metadata,
-not proof that an answer is factually correct.
-
-## Token usage and Groq rate limits
-
-The system prompt was shortened while retaining scope, evidence, privacy,
-pricing, qualifier and citation rules. A controlled Groq probe using the same
-short user question measured **1,021 → 601 input tokens (41.1% fewer)**. This
-measures the fixed prompt only, not a whole chat with tools, evidence and history.
-Repeated final-answer instructions were removed, and evidence JSON now uses
-compact UTF-8 rather than escaping every non-ASCII character. The source-content
-budget and recent-conversation allowance remain unchanged to preserve context.
-
-The 15-minute search cache avoids repeated retrieval; it does not eliminate the
-tokens sent to the answer model. `max_tokens` caps output, not the input prompt.
-Do not blindly cut evidence or tool-call output limits to reduce token usage.
-
-On Groq HTTP 429, the backend honors `retry-after` (or uses 60 seconds when the
-header is missing/invalid). Tool selection, final answers and streaming share the
-cooldown and use Ollama during it. Groq is eligible again after the deadline.
-This state is per Python process: a separate CLI/evaluator or another backend
-worker can still consume the same organization's quota. Restarting clears the
-local cooldown, not the provider's rate limit.
-
-For bulk tests, space questions instead of sending them back-to-back:
-
-```powershell
-python evaluate.py --dataset "C:\Users\Asus\OneDrive\Desktop\A3i_Accel_1000_Chatbot_Test_Questions.csv" --output data/evaluation_1000.json --resume --delay 60 --timeout 90 --stop-on-quota
+```dotenv
+A3I_API_URL=http://127.0.0.1:8000
 ```
 
-`--delay` is the interval after a completed question, not a guarantee that every
-request will fit the token budget. Large prompts or other processes can still
-cause HTTP 429. See [Groq rate-limit documentation](https://console.groq.com/docs/rate-limits).
+Start that frontend from its own directory:
 
-## Verify
+```powershell
+npm install
+npm run dev
+```
+
+The existing frontend forwards `/api/chat` to backend `/chat/stream` and `/api/leads` to `/leads`. Preserve the returned session ID for follow-ups. Do not put model or search keys in `NEXT_PUBLIC_*` variables.
+
+Backend CORS currently allows `http://localhost:3000` and `http://localhost:5173`. A browser connecting directly from another origin needs an appropriate CORS configuration; the existing server-side proxy does not depend on browser-to-backend CORS.
+
+## API usage
+
+| Endpoint | Purpose |
+| --- | --- |
+| `POST /chat` | Complete JSON answer with session ID and intent. |
+| `POST /chat/stream` | NDJSON answer stream. |
+| `POST /leads` | Validate and save a confirmed demo request. |
+
+### Ask a question
+
+```powershell
+$body = @{ message = 'What is A3i-Accel?' } | ConvertTo-Json
+$response = Invoke-RestMethod -Method Post -Uri 'http://127.0.0.1:8000/chat' -ContentType 'application/json' -Body $body
+$response
+```
+
+The response contains `answer`, `session_id`, and `intent`. To continue the conversation:
+
+```powershell
+$body = @{
+    message = 'What products does it offer?'
+    session_id = $response.session_id
+} | ConvertTo-Json
+Invoke-RestMethod -Method Post -Uri 'http://127.0.0.1:8000/chat' -ContentType 'application/json' -Body $body
+```
+
+`page_path` is an optional frontend navigation hint such as `/products/ai-note`; it is not evidence. Omit `session_id` to start a new conversation. An expired or unknown supplied session returns HTTP 404.
+
+### Streaming
+
+Send the same request body to `/chat/stream`. Read each newline as a separate JSON event:
+
+```json
+{"type":"session","session_id":"...","intent":"learn"}
+{"type":"delta","text":"A3i helps..."}
+{"type":"done"}
+```
+
+Append `delta.text` to the displayed answer. An `error` event means the answer did not finish; a streaming HTTP 200 alone does not prove successful completion.
+
+### Save a demo request
+
+After the visitor confirms the form:
+
+```powershell
+$body = @{
+    name = 'Demo User'
+    company = 'Example Company'
+    need = 'Explore meeting-note automation'
+    confirmed = $true
+    request_id = [guid]::NewGuid().ToString()
+} | ConvertTo-Json
+Invoke-RestMethod -Method Post -Uri 'http://127.0.0.1:8000/leads' -ContentType 'application/json' -Body $body
+```
+
+Success returns `lead_id` and `status: saved`. This example writes a synthetic lead to your local database. Reuse the same `request_id` when retrying the same submission; different details under an existing ID return HTTP 409.
+
+Records are stored in `data/leads.sqlite3`. Saving a lead does **not** book a calendar appointment, send an email, or notify a sales team automatically.
+
+## Tests and answer evaluation
+
+Run automated tests without making live model calls:
 
 ```powershell
 python -m unittest discover -s tests -v
-python evaluate.py
-python evaluate.py --limit 10
 ```
 
-The 100 supplied questions are evaluation inputs, not model training examples.
-The model weights are unchanged. Answers come from live public website content.
-The evaluator saves answers after each question to `data/evaluation.json` for
-review. Follow-up questions run without history in this standalone set, so
-clarification can be the correct answer. Unsupported claims must remain unanswered.
-Passing unit tests does not establish live factual accuracy. Provider quotas can
-interrupt evaluation, and local fallback speed depends on your machine.
-
-For broader coverage, `benchmark_500.json` contains the original 100 questions and
-400 generated realistic scenarios covering product knowledge, pricing, contextual
-follow-ups, demo requests, and scope/privacy refusals. Generated questions are
-not actual customer transcripts. There are no invented factual gold answers:
-each live answer must be checked against its saved website evidence. The set is
-template-heavy and is not a statistical measure of real customer accuracy.
+Run a small live evaluation separately:
 
 ```powershell
-python build_benchmark.py
-python evaluate.py --dataset benchmark_500.json --output data/benchmark_500_results.json --resume --timeout 45
+python evaluate.py --limit 10 --delay 20 --stop-on-quota
 ```
 
-The evaluator calls the real agent and saves each answer, supplied evidence,
-intent, timing, code fingerprint, and provisional review flags after every case.
-It does not submit demo forms. Resume skips saved IDs, including failed requests;
-review errors before treating a run as complete. To retest after changing code,
-use a new output filename. The timeout requests cancellation; provider cleanup
-can take longer. Automated flags and routing agreement do not prove relevance or
-factual accuracy. See `BENCHMARK_REPORT.md` for the 50-answer baseline and rechecks.
+This uses real provider calls and saves answers, retrieved evidence, timings, and provisional review flags under `data/`. Check the answers against their evidence manually; a nonempty response is not necessarily correct.
 
-The official site loads About, Services, and other content from public
-`/partials/*.html` fragments that search indexes may omit. The tool reads the
-relevant fragment IDs in `website_sources.json`, extracts visible text, and
-passes relevant excerpts to the LLM. It does not authenticate or read private APIs.
-Update that catalog if the official site changes its fragment IDs.
-
-For the supplied 1,000-question CSV, keep its `ID,Category,Question` columns:
+For a larger JSON or CSV dataset:
 
 ```powershell
-python evaluate.py --dataset "C:\Users\Asus\OneDrive\Desktop\A3i_Accel_1000_Chatbot_Test_Questions.csv" --output data/evaluation_1000.json --resume --timeout 90 --stop-on-quota
+python evaluate.py --dataset benchmark_500.json --output data/benchmark_results.json --limit 10 --delay 60 --stop-on-quota
 ```
 
-The evaluator writes `data/evaluation_1000.md` with attempted questions, nonempty
-responses, failures, missing-information wording and observed provider limits.
-With `--stop-on-quota`, it finishes/saves the current attempt and stops after an
-exhausted credit/daily quota or authentication failure. Temporary rate limits
-are recorded separately and do not prove credit exhaustion. LLM fallback may
-still answer the current question locally. Exact remaining credits are not
-available from these responses. Do not run another evaluator against the same
-output file while a run is active. CSV questions run independently without
-inventing conversation history or expected answers.
+Add `--resume` to continue the same selected dataset and output. Saved IDs, including failures, are skipped; use a new output filename for a fresh evaluation after code changes. CSV input uses `ID,Category,Question` columns. Standalone questions have no invented conversation history.
 
-## External sources
+HTTP 429 can still occur despite pacing. Groq cooldown is process-local; multiple CLI/API/evaluation processes can share the same provider quota. `--stop-on-quota` stops after a saved attempt reports exhausted quota/credits or authentication failure; temporary rate limits are recorded separately. Evaluation cancellation can take longer than its requested timeout.
 
-Official A3i evidence is retrieved first. For company background, leadership,
-location, history, partnerships and announcements, the same tool can supplement
-it with relevant **approved** external snapshots. Pricing, product features,
-integrations, policies, refunds and demo questions remain official-only. Questions
-mixing these topics also stay official-only. No frontend or API contract changes
-are needed; existing citation and streaming handling also supports reviewed links.
-Combined official and secondary excerpts stay within a 7,200-character evidence
-budget, with most space reserved for official sources when both are available.
+See [deployment smoke results](DEPLOYMENT_SMOKE_REPORT.md) and [benchmark findings](BENCHMARK_REPORT.md). These reports describe limited checks, not an overall accuracy guarantee.
 
-Discovery uses the existing Tavily key and a fixed domain list: LinkedIn,
-English Wikipedia, NVIDIA and Anthropic. LinkedIn results are limited to A3i's
-company profile and company posts. Other candidates must name A3i-Accel and
-reference its official domain. These are candidate filters, not proof of accuracy.
-Wikipedia support does not imply that a matching company article exists.
+## External source review
 
-For eligible background questions without matching approved evidence, discovery
-can collect up to three candidates. Results are stored in the separate
-`data/external_sources.sqlite3` database with URL, title, extracted text, publication
-date when supplied, retrieval time, review time and status. It uses public text
-returned by Tavily, not logged-in LinkedIn access or browser scraping. The stored
-text is bounded to 12,000 characters; review that exact snapshot. No model training
-or automatic source approval occurs.
-
-You can also collect and review from the project root:
+External discovery is optional and requires Tavily. Collect company-background candidates and inspect their exact saved text:
 
 ```powershell
-python external_sources.py collect "A3i-Accel company headquarters and background"
+python external_sources.py collect "A3i-Accel company background"
 python external_sources.py list
+```
+
+Verify the publisher, company identity, facts, and dates before approving a snapshot:
+
+```powershell
 python external_sources.py approve 1
+```
+
+Replace `1` with the ID shown by `list`. Reject or revoke a snapshot with:
+
+```powershell
 python external_sources.py reject 1
 ```
 
-Replace `1` with an ID shown by `list`. Before approving, verify the company,
-publisher, extracted facts and date against the linked page. `approve` makes only
-that exact snapshot available; changed content becomes a new `pending_review`
-record. `reject` also revokes an earlier approval. Pending and rejected text never
-reaches the answer model. Approvals and revocations are checked on every lookup;
-the official search cache does not delay them. Review is local CLI access, not a
-public API endpoint. Keep this database backed up if the approvals matter.
+The allowlist covers restricted A3i LinkedIn URLs and relevant Wikipedia, NVIDIA, and Anthropic pages. Inclusion does not imply a matching article exists or that a candidate is accurate. Discovery uses public text returned by Tavily, not logged-in account access. Reviews are stored locally in `data/external_sources.sqlite3`; they are not uploaded through Git.
 
-The answer instructions prioritize official information, attribute external facts,
-preserve dates and disclose disagreements. These instructions are not a semantic
-fact checker. Search/extraction can fail or miss pages; optional external failures
-do not discard a successful official lookup. Successful candidate discovery is
-cached for 15 minutes; publication dates remain unknown when the provider omits
-them. Existing approved snapshots are not silently refreshed or re-approved.
+## Deployment
 
-## Rollback note
+Deploy the frontend and backend separately:
 
-The V2 telemetry, privacy modes, deterministic four-intent router, approved local
-index, evidence scoring, second-pass reviewer, and original ingestion utilities have
-been removed from the active runtime. The `app/`, `scripts/` and `docs/` layout has
-been reversed. The earlier source snapshot was not available in Git, so this is a
-functional reversal rather than a byte-for-byte restoration. Existing `.env`
-values and lead records were preserved; V2-only environment variables are unused.
-The small external-snapshot review workflow above was added separately after this
-rollback at the user's request; it does not restore the V2 architecture.
+1. Host the Python API on a service that supports a long-running Python process.
+2. Install dependencies with `pip install -r requirements.txt`.
+3. Start Uvicorn on the host's assigned port. For a Linux host providing `PORT`:
+
+   ```bash
+   uvicorn main:app --host 0.0.0.0 --port "$PORT"
+   ```
+
+4. Set backend credentials through the hosting service's environment settings.
+5. Set the frontend's `A3I_API_URL` to the deployed backend's HTTPS address and redeploy the frontend.
+6. Use persistent storage for `data/` if lead records and source approvals must survive restarts/redeployments.
+7. Verify deployed chat streaming, pricing guidance, refusal behavior, and a demo submission end to end.
+
+`python main.py` is a local development launcher with reload enabled. A cloud server cannot reach Ollama on your laptop through `127.0.0.1`; provide a reachable Ollama service for fallback or ensure the cloud model is available. The frontend's localhost default likewise cannot reach your laptop from a deployed server.
+
+## Current limitations
+
+- Retrieval can miss pages or lose context. Update `website_sources.json` if the official website changes its fragments.
+- Prompts and URL filtering are not semantic fact checking. Verbosity, citation formatting, and cross-product inference issues remain in the smoke report.
+- Sessions, the search cache, provider cooldown, and request serialization are per process. Restarting clears memory; multiple workers do not share sessions.
+- The API serializes chat generation within each process. A busy model returns a retry response.
+- Lead endpoints do not include authentication or a complete public abuse-prevention layer. Assess those needs before exposing the service beyond an assignment demo.
+- SQLite files need durable storage and appropriate access controls. They contain submitted lead information.
+
+This project retrieves and synthesizes source content; it does not guarantee that every answer is correct or that every website page is covered.
