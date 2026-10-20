@@ -1,4 +1,4 @@
-"""Run terminal chat with: python -m scripts.chat_cli [--debug]."""
+"""Run terminal chat with: python chat_cli.py [--debug]."""
 import asyncio
 import logging
 import sys
@@ -6,8 +6,8 @@ from uuid import uuid4
 
 import httpx
 
-from app.agent import MODEL, stream_chat
-from app.memory import load_history, save_history
+from agent import MODEL, stream_chat
+from memory import load_history, save_history
 
 
 async def main():
@@ -66,7 +66,7 @@ if __name__ == "__main__":
     sys.stdout.reconfigure(encoding="utf-8", errors="replace")
     if "--debug" in sys.argv:
         logging.basicConfig(level=logging.WARNING, format="%(name)s: %(message)s")
-        logging.getLogger("app.agent").setLevel(logging.INFO)
+        logging.getLogger("agent").setLevel(logging.INFO)
     try:
         asyncio.run(main())
     except KeyboardInterrupt:

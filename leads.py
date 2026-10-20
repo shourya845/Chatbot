@@ -6,9 +6,9 @@ from uuid import UUID, uuid4
 
 from pydantic import BaseModel, ConfigDict, Field
 
-from .config import RUNTIME_DATA_DIR
+from pathlib import Path
 
-DB_PATH = RUNTIME_DATA_DIR / "leads.sqlite3"
+DB_PATH = Path(__file__).parent / "data" / "leads.sqlite3"
 
 
 class DemoRequest(BaseModel):

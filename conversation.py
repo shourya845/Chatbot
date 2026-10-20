@@ -21,7 +21,7 @@ PRODUCTS = (
 )
 
 WEBSITE_TOPICS = {
-    "Company": r"\b(company|about us|team|leadership|founders?)\b",
+    "Company": r"\b(company|about us|team|leadership|founders?|co-founders?|ceo|coo)\b",
     "Contact": r"\b(contact|address|email address|phone number)\b",
     "Careers": r"\b(careers?|jobs?|vacancies|hiring opportunities)\b",
     "Industries": (
@@ -112,6 +112,20 @@ def clarification(message: str, history: list[dict], page_path: str = "") -> str
 
 def resolve_followup(message: str, history: list[dict], page_path: str = "") -> str:
     """Add the last clear topic without choosing between ambiguous options."""
+    products = mentioned_products(message)
+    if (
+        len(products) == 1
+        and message.strip(" ?!.").casefold() == products[0].casefold()
+        and history
+        and history[-1]["role"] == "assistant"
+        and re.search(r"which (?:a3i )?product", history[-1]["content"], re.I)
+    ):
+        previous_question = next(
+            (item["content"] for item in reversed(history[-6:]) if item["role"] == "user"),
+            "",
+        )
+        if re.search(r"\b(pric(?:e|es|ing)|cost|plans?|subscription)\b", previous_question, re.I):
+            return f"{products[0]}: {previous_question}"
     if mentioned_topics(message):
         return message
     if re.search(r"\bthis (page|website|site)\b", message, re.I):

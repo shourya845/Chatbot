@@ -1,0 +1,232 @@
+[
+  {
+    "id": "home",
+    "title": "A3i-Accel",
+    "keywords": "company overview introduction website product portfolio Apps Ants Agents NeXtory H3ive Send3r SpeedRec Invenio Video AI automation productivity"
+  },
+  {
+    "id": "sol-notes-ai",
+    "title": "Notes AI",
+    "keywords": "/products/ai-note Notes AI NeXtory meeting notes transcript recording"
+  },
+  {
+    "id": "ind-recruiters",
+    "title": "AI for Recruiters",
+    "keywords": "/products/ai-hire AI for Recruiters SpeedHire SpeedRec AI-Hire recruitment hiring candidate screening"
+  },
+  {
+    "id": "prod-lead",
+    "title": "AI-Lead",
+    "keywords": "/products/ai-lead AI-Lead Invenio lead discovery"
+  },
+  {
+    "id": "prod-advisor",
+    "title": "AI-Advisor",
+    "keywords": "/products/ai-advisor AI-Advisor "
+  },
+  {
+    "id": "prod-marketing",
+    "title": "AI-Marketing",
+    "keywords": "/products/ai-marketing AI-Marketing Send3r marketing email campaign"
+  },
+  {
+    "id": "services",
+    "title": "Three Ways to Put Accelerators to Work",
+    "keywords": "/services Three Ways to Put Accelerators to Work service custom build pricing price cost quote subscription trial integration deployment implementation training support"
+  },
+  {
+    "id": "about",
+    "title": "Built to Multiply Human Potential",
+    "keywords": "/company/about Built to Multiply Human Potential company overview founder cofounder co-founder CEO COO leadership team founded established location Alok Kumar Vaibhav Desai"
+  },
+  {
+    "id": "contact",
+    "title": "Start Accelerating Today",
+    "keywords": "/contact Start Accelerating Today contact email address location office phone sales quote pricing demo"
+  },
+  {
+    "id": "collaborations",
+    "title": "Collaborate With A3i",
+    "keywords": "/company/collaborations Collaborate With A3i "
+  },
+  {
+    "id": "careers",
+    "title": "Build the Future of Applied AI",
+    "keywords": "/company/careers Build the Future of Applied AI "
+  },
+  {
+    "id": "competitions",
+    "title": "A3i Competitions",
+    "keywords": "/company/competitions A3i Competitions "
+  },
+  {
+    "id": "responsible-ai",
+    "title": "Responsible AI",
+    "keywords": "/responsible-ai Responsible AI security privacy responsible human oversight guardrails data protection local cloud on-premise"
+  },
+  {
+    "id": "resources",
+    "title": "Integrations, Architecture & Proof",
+    "keywords": "/resources Integrations, Architecture & Proof technology RAG retrieval augmented generation agentic generative LLM integration API architecture limitations human decision"
+  },
+  {
+    "id": "ind-banks",
+    "title": "AI for Banks",
+    "keywords": "/industries/banks AI for Banks "
+  },
+  {
+    "id": "fin-advisor",
+    "title": "Quarterly Client Emails, Done in Minutes",
+    "keywords": "/industries/financial-advisors Quarterly Client Emails, Done in Minutes "
+  },
+  {
+    "id": "ind-hedge-funds",
+    "title": "AI for Hedge Funds",
+    "keywords": "/industries/hedge-funds AI for Hedge Funds "
+  },
+  {
+    "id": "ind-fintech",
+    "title": "AI for Fintechs",
+    "keywords": "/industries/fintechs AI for Fintechs "
+  },
+  {
+    "id": "ind-grid-ops",
+    "title": "AI for Grid & Operations",
+    "keywords": "/industries/grid-operations AI for Grid & Operations "
+  },
+  {
+    "id": "ind-circuit-design",
+    "title": "AI for Circuit Design",
+    "keywords": "/industries/circuit-design AI for Circuit Design "
+  },
+  {
+    "id": "ind-renewables",
+    "title": "AI for Renewable Energy",
+    "keywords": "/industries/renewable-energy AI for Renewable Energy "
+  },
+  {
+    "id": "ind-energy-trading",
+    "title": "AI for Energy Trading",
+    "keywords": "/industries/energy-trading AI for Energy Trading "
+  },
+  {
+    "id": "restaurants",
+    "title": "Your Phone Answered. Every Order Taken.",
+    "keywords": "/industries/restaurants Your Phone Answered. Every Order Taken. "
+  },
+  {
+    "id": "ind-clinics",
+    "title": "AI for Clinics",
+    "keywords": "/industries/clinics AI for Clinics "
+  },
+  {
+    "id": "ind-hospitality",
+    "title": "AI for Hospitality",
+    "keywords": "/industries/hospitality AI for Hospitality "
+  },
+  {
+    "id": "wf-email",
+    "title": "Summarise & Reply to Emails in Seconds",
+    "keywords": "/workflows/email Summarise & Reply to Emails in Seconds "
+  },
+  {
+    "id": "wf-invoice",
+    "title": "Generate Professional Invoices Instantly",
+    "keywords": "/workflows/invoice Generate Professional Invoices Instantly "
+  },
+  {
+    "id": "wf-meeting",
+    "title": "Turn Raw Notes into Action-Ready Summaries",
+    "keywords": "/workflows/meeting Turn Raw Notes into Action-Ready Summaries "
+  },
+  {
+    "id": "wf-report",
+    "title": "Transform Bullet Points into Polished Reports",
+    "keywords": "/workflows/report Transform Bullet Points into Polished Reports "
+  },
+  {
+    "id": "sol-voice-agents",
+    "title": "Voice Agents",
+    "keywords": "/workflows/voice Voice Agents 3i Voice Assist voice AI calls"
+  },
+  {
+    "id": "sol-scheduling-bot",
+    "title": "Scheduling Bot",
+    "keywords": "/workflows/scheduling Scheduling Bot "
+  },
+  {
+    "id": "sol-personal-assistant",
+    "title": "Personal Assistant",
+    "keywords": "/workflows/personal Personal Assistant "
+  },
+  {
+    "id": "solutions",
+    "title": "Solutions",
+    "keywords": "/solutions Solutions "
+  },
+  {
+    "id": "sol-data-streamline",
+    "title": "Data Streamline",
+    "keywords": "/solutions/data-streamline Data Streamline "
+  },
+  {
+    "id": "sol-unstructured",
+    "title": "Unstructured Data",
+    "keywords": "/solutions/unstructured-data Unstructured Data "
+  },
+  {
+    "id": "sol-ocr-scan",
+    "title": "OCR & Scan",
+    "keywords": "/solutions/ocr-scan OCR & Scan "
+  },
+  {
+    "id": "sol-rpa-ipa",
+    "title": "RPA / IPA",
+    "keywords": "/solutions/process-automation RPA / IPA "
+  },
+  {
+    "id": "sol-research",
+    "title": "Research",
+    "keywords": "/solutions/research Research "
+  },
+  {
+    "id": "sol-web-crawlers",
+    "title": "Web Crawlers",
+    "keywords": "/solutions/web-crawlers Web Crawlers "
+  },
+  {
+    "id": "sol-video-agent",
+    "title": "Video Agent",
+    "keywords": "/solutions/video-agent Video Agent Video AI A3i Video Studio"
+  },
+  {
+    "id": "sol-physical-ai",
+    "title": "Physical AI",
+    "keywords": "/solutions/physical-ai Physical AI "
+  },
+  {
+    "id": "ai-data",
+    "title": "AI for Data",
+    "keywords": "/solutions/ai-data AI for Data "
+  },
+  {
+    "id": "res-roi",
+    "title": "ROI Comes From Optimized AI — Not Just AI",
+    "keywords": "/resources/roi ROI Comes From Optimized AI — Not Just AI ROI return investment savings operating costs"
+  },
+  {
+    "id": "res-optimized-ai",
+    "title": "Optimized AI: Why the Leanest Model Wins",
+    "keywords": "/resources/optimized-ai Optimized AI: Why the Leanest Model Wins model optimization leanest AI cost"
+  },
+  {
+    "id": "res-voice-field-notes",
+    "title": "Voice AI in Production: Field Notes",
+    "keywords": "/resources/voice-field-notes Voice AI in Production: Field Notes "
+  },
+  {
+    "id": "ind-sme",
+    "title": "AI for Small & Medium Enterprises",
+    "keywords": "/industries/small-business AI for Small & Medium Enterprises small medium business retail productivity benefits"
+  }
+]

@@ -2,8 +2,5 @@
 __pycache__/
 .env
 data/
-artifacts/
-.pytest_cache/
-.mypy_cache/
-*.py[cod]
+*.pyc
 

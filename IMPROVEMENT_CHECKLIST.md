@@ -1,8 +1,7 @@
 # a31-assistance implementation audit
 
-> This file is the pre-V2 audit snapshot. Current implementation status and
-> measured results are documented in `IMPLEMENTATION_AUDIT.md`, `ARCHITECTURE.md`,
-> `CHANGE_SUMMARY.md` and `PERFORMANCE_REPORT.md`.
+> Historical audit from before the V2 upgrade. This is reference material,
+> not a current feature checklist or implementation instruction.
 
 Audit date: 19 October 2026, Asia/Calcutta.
 

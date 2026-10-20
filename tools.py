@@ -1,6 +1,7 @@
 """Search approved A3i content without exposing configurable domains to the model."""
 
 import os
+import logging
 import re
 import time
 from collections import OrderedDict
@@ -13,12 +14,13 @@ from langchain_core.tools import ToolException, tool
 from langchain_tavily import TavilySearch
 from pydantic import BaseModel, ConfigDict, Field
 
-from .config import load_environment
-from .knowledge import search_approved_knowledge
-from .privacy import external_services_allowed
-from .telemetry import record_search
-
-load_environment()
+from pathlib import Path
+from dotenv import load_dotenv
+from website import search_terms, website_results
+from conversation import mentioned_products
+from external_sources import approved_results, discover, external_allowed
+load_dotenv(Path(__file__).with_name(".env"))
+logger = logging.getLogger(__name__)
 CACHE_TTL = 15 * 60
 MAX_CACHE_ENTRIES = 128
 OFFICIAL_HOSTS = {"a3i-accel.com", "www.a3i-accel.com"}
@@ -32,17 +34,39 @@ class SearchQuery(BaseModel):
 
 
 def relevant_excerpt(text: str, query: str) -> str:
-    """Prefer matching page sections, instead of cutting off the page introduction."""
-    stopwords = set("what are is does how the a an do about and or at of".split())
-    terms = set(re.findall(r"\w+", query.casefold())) - stopwords
-    sections = re.split(r"(?m)(?=^#{1,4}\s)", text)
-
+    """Keep relevant page sections within a small context budget."""
+    terms = search_terms(query)
+    sections = re.split(r"(?m)(?=^(?:[*+-] )?#{1,4}\s)", text)
     def score(section):
-        heading = section.split("\n", 1)[0] if section.startswith("#") else ""
-        return (3 * len(terms & set(re.findall(r"\w+", heading.casefold())))
-                + len(terms & set(re.findall(r"\w+", section.casefold()))))
-    selected = sorted(enumerate(sections), key=lambda item: score(item[1]), reverse=True)[:3]
-    return "\n\n".join(section[:1200] for _, section in sorted(selected))[:3600]
+        heading = section.split("\n", 1)[0]
+        heading_terms = search_terms(heading)
+        focused_heading = len(heading_terms) == 1 and bool(terms & heading_terms)
+        product_heading = "product" in terms and bool(mentioned_products(heading))
+        pricing_section = "pricing" in terms and bool(re.search(
+            r"call for pricing|\$\s*\d[^\n]*?/\s*(?:month|year)|licensed on this page",
+            section, re.I,
+        ))
+        return (
+            3 * len(terms & heading_terms)
+            + len(terms & search_terms(section))
+            + 8 * focused_heading
+            + 5 * product_heading
+            + 6 * pricing_section
+        )
+    count = 6 if "product" in terms else 3
+    selected = sorted(enumerate(sections), key=lambda item: score(item[1]), reverse=True)[:count]
+    # Give the best section space first so introductory text cannot cut off a pricing table.
+    excerpts = []
+    remaining = 3600
+    for index, section in selected:
+        plan_table = re.search(r"licensed on this page|\$\s*\d[^\n]*?/\s*(?:month|year)", section, re.I)
+        limit = 3600 if plan_table else 1200
+        excerpt = section[:min(limit, remaining)]
+        excerpts.append((index, excerpt))
+        remaining -= len(excerpt) + 2
+        if remaining <= 0:
+            break
+    return "\n\n".join(section for _, section in sorted(excerpts))[:3600]
 
 
 def _search_query(query: str) -> str:
@@ -95,6 +119,7 @@ def _official_results(response: dict, query: str) -> list[dict]:
                     "url": url,
                     "content": content,
                     "source": "tavily",
+                    "priority": "primary",
                     "retrieved_at": retrieved_at,
                 }
             )
@@ -121,42 +146,64 @@ def _search_tavily(query: str) -> dict:
 
 @tool(args_schema=SearchQuery)
 def search_a3i_web(query: str) -> dict:
-    """Search approved local A3i knowledge first, then the official website when
-    cloud access is allowed: company, team, industries, products, services,
-    resources, careers, contact, responsible AI, pricing and policies.
-    """
-    started_at = time.perf_counter()
-    cache_hit = None
-    retrieval_source = "approved_local"
+    """Read official A3i evidence and reviewed external company-background snapshots."""
+    query = _search_query(query)
+    official = _search_official(query)
+    if not external_allowed(query):
+        return official
     try:
-        approved_results = search_approved_knowledge(query)
-        if approved_results:
-            return {"results": approved_results}
-        if not external_services_allowed():
-            return {"results": []}
-        retrieval_source = "tavily"
-        cache_hit = False
+        reviewed = approved_results(query)
+        key = "external:" + " ".join(query.casefold().split())
+        if not reviewed and os.getenv("TAVILY_API_KEY") and _cached_result(key) is None:
+            ids = discover(query)
+            if ids:
+                _cache_result(key, {"candidate_ids": ids})
+        if reviewed:
+            primary = official.get("results", [])
+            primary = [{**row, "content": row["content"][:5400 // max(1, len(primary))]}
+                       for row in primary]
+            remaining = 7200 - sum(len(row["content"]) for row in primary)
+            return {"results": primary + [
+                {**row, "content": relevant_excerpt(row["content"], query)[:remaining // len(reviewed)]}
+                for row in reviewed
+            ]}
+    except Exception as error:
+        # Optional evidence must not turn a successful official lookup into an outage.
+        logger.warning("External source fallback unavailable (%s)", type(error).__name__)
+    return official
+
+
+def _search_official(query: str) -> dict:
+    """Cache official evidence separately from revocable external approvals."""
+    query = _search_query(query)
+    key = " ".join(re.sub(r"[^\w\s]", " ", query.casefold()).split())
+    cached = _cached_result(key)
+    if cached is not None:
+        return cached
+    try:
+        pages = website_results(query)
+        if pages:
+            result = {"results": [
+                {**page, "content": relevant_excerpt(page["content"], query),
+                 "source": "official_website", "priority": "primary",
+                 "retrieved_at": datetime.now(timezone.utc).isoformat()}
+                for page in pages
+            ]}
+            _cache_result(key, result)
+            return result
         if not os.getenv("TAVILY_API_KEY"):
             return {"error": "Tavily search is not configured."}
-        query = _search_query(query)
-        key = " ".join(re.sub(r"[^\w\s]", " ", query.casefold()).split())
-        cached = _cached_result(key)
-        if cached is not None:
-            cache_hit = True
-            return cached
-        try:
-            result = _search_tavily(query)
-            if result.get("results"):
-                _cache_result(key, result)
-            return result
-        except ToolException as error:
-            if "no search results" in str(error).lower():
-                return {"results": []}
-            return search_failure(error)
-        except Exception as error:
-            return search_failure(error)
-    finally:
-        record_search(cache_hit=cache_hit, started_at=started_at, source=retrieval_source)
+        logger.info("Calling Tavily search on the official A3i domain")
+        result = _search_tavily(query)
+        if result.get("results"):
+            _cache_result(key, result)
+        return result
+    except ToolException as error:
+        if "no search results" in str(error).lower():
+            return {"results": []}
+        return search_failure(error)
+    except Exception as error:
+        return search_failure(error)
 
 
 def search_failure(error) -> dict:
