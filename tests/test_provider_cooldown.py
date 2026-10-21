@@ -15,6 +15,19 @@ class RateLimitError(Exception):
 
 
 class CooldownTests(unittest.IsolatedAsyncioTestCase):
+    def test_ollama_authentication_is_optional_and_shared_by_both_clients(self):
+        for key in ('', ' test-not-real '):
+            with self.subTest(authenticated=bool(key)), \
+                    patch.dict('os.environ', {'OLLAMA_API_KEY': key}):
+                agent.provider_model.cache_clear()
+                try:
+                    model = agent.provider_model('ollama')
+                    for client in (model._client, model._async_client):
+                        authorization = client._client.headers.get('Authorization')
+                        self.assertEqual(authorization, 'Bearer test-not-real' if key else None)
+                finally:
+                    agent.provider_model.cache_clear()
+
     def setUp(self):
         state = patch.object(agent, 'groq_retry_at', 0.0)
         state.start()

@@ -104,9 +104,13 @@ def provider_model(provider: str):
     if provider == "groq":
         return ChatGroq(model=GROQ_MODEL, temperature=0, max_tokens=800,
                         reasoning_effort="low", timeout=15, max_retries=0)
+    client_kwargs = {"timeout": 120}
+    api_key = os.getenv("OLLAMA_API_KEY", "").strip()
+    if api_key:
+        client_kwargs["headers"] = {"Authorization": f"Bearer {api_key}"}
     return ChatOllama(model=MODEL, base_url=OLLAMA_URL, temperature=0,
                       reasoning=False, num_ctx=4096, num_predict=400,
-                      keep_alive="2m", client_kwargs={"timeout": 120})
+                      keep_alive="2m", client_kwargs=client_kwargs)
 
 
 def model_candidates(allow_tools=True):

@@ -119,8 +119,9 @@ Edit your local `.env`:
 ```dotenv
 GROQ_API_KEY=
 GROQ_MODEL=openai/gpt-oss-20b
-OLLAMA_URL=http://127.0.0.1:11434
-OLLAMA_MODEL=qwen3:4b-instruct-2507-q4_K_M
+OLLAMA_URL=https://ollama.com
+OLLAMA_MODEL=gpt-oss:20b
+OLLAMA_API_KEY=
 TAVILY_API_KEY=
 ```
 
@@ -128,11 +129,14 @@ TAVILY_API_KEY=
 | --- | --- |
 | `GROQ_API_KEY` | Enables the preferred cloud model. Leave empty to use Ollama. |
 | `GROQ_MODEL` | Model name sent to Groq. |
-| `OLLAMA_URL` | Address of the Ollama server. |
-| `OLLAMA_MODEL` | Exact installed Ollama model tag. |
+| `OLLAMA_URL` | Ollama endpoint: `https://ollama.com` for cloud, or `http://127.0.0.1:11434` for local inference. |
+| `OLLAMA_MODEL` | Exact cloud API model name or installed local model tag. |
+| `OLLAMA_API_KEY` | Bearer authentication for Ollama Cloud. Leave empty for an unauthenticated local server. |
 | `TAVILY_API_KEY` | Enables official-site fallback search and optional external discovery. Direct official-page retrieval works without it. |
 
-Install Ollama separately if using local inference or fallback. Pull the model matching your configuration:
+For hosted deployment, set these variables in the backend host's environment too; your local `.env` is not deployed automatically. Ollama Cloud requires no local model installation.
+
+For local inference, set `OLLAMA_URL=http://127.0.0.1:11434`, `OLLAMA_MODEL=qwen3:4b-instruct-2507-q4_K_M`, and leave `OLLAMA_API_KEY` empty. Install Ollama separately and pull the model:
 
 ```powershell
 ollama pull qwen3:4b-instruct-2507-q4_K_M
